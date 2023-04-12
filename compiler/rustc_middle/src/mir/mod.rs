@@ -915,7 +915,7 @@ pub enum LocalInfo<'tcx> {
 
 impl<'tcx> LocalDecl<'tcx> {
     pub fn local_info(&self) -> &LocalInfo<'tcx> {
-        &**self.local_info.as_ref().assert_crate_local()
+        &self.local_info.as_ref().assert_crate_local()
     }
 
     /// Returns `true` only if local is a binding that can itself be
@@ -2001,6 +2001,13 @@ impl<'tcx> Rvalue<'tcx> {
 }
 
 impl BorrowKind {
+    pub fn mutability(&self) -> Mutability {
+        match *self {
+            BorrowKind::Shared | BorrowKind::Shallow | BorrowKind::Unique => Mutability::Not,
+            BorrowKind::Mut { .. } => Mutability::Mut,
+        }
+    }
+
     pub fn allows_two_phase_borrow(&self) -> bool {
         match *self {
             BorrowKind::Shared | BorrowKind::Shallow | BorrowKind::Unique => false,

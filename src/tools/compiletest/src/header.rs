@@ -6,6 +6,7 @@ use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use build_helper::ci::CiEnv;
 use tracing::*;
 
 use crate::common::{Config, Debugger, FailMode, Mode, PassMode};
@@ -144,6 +145,8 @@ pub struct TestProps {
     pub normalize_stdout: Vec<(String, String)>,
     pub normalize_stderr: Vec<(String, String)>,
     pub failure_status: i32,
+    // For UI tests, allows compiler to exit with arbitrary failure status
+    pub dont_check_failure_status: bool,
     // Whether or not `rustfix` should apply the `CodeSuggestion`s of this test and compile the
     // resulting Rust code.
     pub run_rustfix: bool,
@@ -186,6 +189,7 @@ mod directives {
     pub const CHECK_TEST_LINE_NUMBERS_MATCH: &'static str = "check-test-line-numbers-match";
     pub const IGNORE_PASS: &'static str = "ignore-pass";
     pub const FAILURE_STATUS: &'static str = "failure-status";
+    pub const DONT_CHECK_FAILURE_STATUS: &'static str = "dont-check-failure-status";
     pub const RUN_RUSTFIX: &'static str = "run-rustfix";
     pub const RUSTFIX_ONLY_MACHINE_APPLICABLE: &'static str = "rustfix-only-machine-applicable";
     pub const ASSEMBLY_OUTPUT: &'static str = "assembly-output";
@@ -233,6 +237,7 @@ impl TestProps {
             normalize_stdout: vec![],
             normalize_stderr: vec![],
             failure_status: -1,
+            dont_check_failure_status: false,
             run_rustfix: false,
             rustfix_only_machine_applicable: false,
             assembly_output: None,
@@ -272,8 +277,12 @@ impl TestProps {
     /// `//[foo]`), then the property is ignored unless `cfg` is
     /// `Some("foo")`.
     fn load_from(&mut self, testfile: &Path, cfg: Option<&str>, config: &Config) {
-        // Mode-dependent defaults.
-        self.remap_src_base = config.mode == Mode::Ui && !config.suite.contains("rustdoc");
+        // In CI, we've sometimes encountered non-determinism related to truncating very long paths.
+        // Set a consistent (short) prefix to avoid issues, but only in CI to avoid regressing the
+        // contributor experience.
+        if CiEnv::is_ci() {
+            self.remap_src_base = config.mode == Mode::Ui && !config.suite.contains("rustdoc");
+        }
 
         let mut has_edition = false;
         if !testfile.is_dir() {
@@ -394,6 +403,12 @@ impl TestProps {
                 {
                     self.failure_status = code;
                 }
+
+                config.set_name_directive(
+                    ln,
+                    DONT_CHECK_FAILURE_STATUS,
+                    &mut self.dont_check_failure_status,
+                );
 
                 config.set_name_directive(ln, RUN_RUSTFIX, &mut self.run_rustfix);
                 config.set_name_directive(
